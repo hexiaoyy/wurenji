@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>无人机飞行规划系统 - 南京科技职业学院</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #eee;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        .navbar {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            height: 60px;
+        }
+        .navbar h1 { color: #00d4ff; font-size: 20px; text-shadow: 0 0 10px rgba(0,212,255,0.5); }
+        .navbar .subtitle { font-size: 12px; color: #888; margin-left: 10px; }
+        .nav-links { display: flex; gap: 20px; }
+        .nav-links span {
+            color: #eee; padding: 8px 15px; border-radius: 5px;
+            transition: all 0.3s; cursor: pointer; user-select: none;
+        }
+        .nav-links span:hover, .nav-links span.active {
+            background: rgba(0,212,255,0.2); color: #00d4ff;
+        }
+        .container { display: flex; height: calc(100vh - 60px - 40px); }
+        .sidebar {
+            width: 340px; background: rgba(0,0,0,0.2); padding: 20px;
+            overflow-y: auto; border-right: 1px solid rgba(255,255,255,0.1);
+        }
+        .sidebar-section { margin-bottom: 25px; display: none; }
+        .sidebar-section.active { display: block; }
+        .sidebar-section h3 {
+            color: #00d4ff; font-size: 14px; letter-spacing: 1px;
+            margin-bottom: 15px; padding-bottom: 10px;
+            border-bottom: 1px solid rgba(0,212,255,0.3);
+        }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; color: #888; font-size: 12px; }
+        .form-group input, .form-group select {
+            width: 100%; padding: 10px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 5px; color: #eee; font-size: 14px;
+        }
+        .form-group input:focus { outline: none; border-color: #00d4ff; }
+        .btn {
+            width: 100%; padding: 12px;
+            background: linear-gradient(135deg, #00d4ff, #0099cc);
+            border: none; border-radius: 5px;
+            color: #000; font-weight: bold; cursor: pointer;
+            transition: all 0.3s; margin-bottom: 10px;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,212,255,0.4); }
+        .btn-secondary { background: rgba(255,255,255,0.1); color: #eee; }
+        .btn-danger { background: linear-gradient(135deg, #ff4444, #cc0000); color: #fff; }
+        .main-content { flex: 1; display: flex; flex-direction: column; position: relative; }
+        .map-container { flex: 1; position: relative; }
+        #map { width: 100%; height: 100%; }
+        .status-bar {
+            background: rgba(0,0,0,0.5); padding: 10px 20px;
+            display: flex; justify-content: space-between;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            height: 40px; align-items: center; font-size: 13px;
+        }
+        .status-item { display: flex; align-items: center; gap: 10px; }
+        .status-indicator {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: #00ff00; animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .tab-content { display: none; flex: 1; overflow-y: auto; padding: 20px; }
+        .tab-content.active { display: block; }
+        #tab-map.tab-content { padding: 0; display: none; flex-direction: column; }
+        #tab-map.tab-content.active { display: flex; }
+        .coord-display {
+            background: rgba(0,0,0,0.3); padding: 15px;
+            border-radius: 8px; margin-bottom: 15px;
+        }
+        .coord-display .coord-item {
+            display: flex; justify-content: space-between; padding: 5px 0;
+        }
+        .obstacle-list { max-height: 180px; overflow-y: auto; }
+        .obstacle-item {
+            background: rgba(255,0,0,0.1); padding: 10px;
+            border-radius: 5px; margin-bottom: 8px; border-left: 3px solid #ff4444;
+        }
+        .obstacle-item h4 { color: #ff6666; margin-bottom: 5px; font-size: 13px; }
+        .obstacle-item .height { color: #888; font-size: 11px; }
+        .hint-text { color: #888; font-size: 12px; margin-bottom: 10px; line-height: 1.5; }
+        .map-toolbar {
+            position: absolute; top: 10px; right: 10px; z-index: 1000;
+            background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px;
+        }
+        .tool-btn {
+            display: block; width: 40px; height: 40px; margin: 5px;
+            background: rgba(255,255,255,0.1); border: none;
+            border-radius: 5px; color: #eee; cursor: pointer; font-size: 18px;
+        }
+        .tool-btn:hover { background: rgba(0,212,255,0.3); }
+        .tool-btn.active { background: #00d4ff; color: #000; }
+        .section-title {
+            color: #00d4ff; font-size: 18px; margin-bottom: 15px;
+            padding-bottom: 10px; border-bottom: 2px solid rgba(0,212,255,0.3);
+        }
+        .topology-container {
+            background: rgba(0,0,0,0.3); padding: 25px;
+            border-radius: 10px; margin-bottom: 20px;
+        }
+        .topology-container h3 { color: #00d4ff; margin-bottom: 20px; font-size: 15px; }
+        .topology-chart {
+            display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+        }
+        .topology-node {
+            padding: 20px 30px; border-radius: 12px;
+            text-align: center; min-width: 120px;
+        }
+        .node-gcs { background: #e94560; }
+        .node-obc { background: #0f3460; border: 1px solid #00d4ff; }
+        .node-fcu { background: #533483; }
+        .topology-node .icon { font-size: 32px; margin-bottom: 8px; }
+        .topology-node .name { font-weight: bold; font-size: 16px; }
+        .topology-node .desc { font-size: 12px; color: rgba(255,255,255,0.7); margin-top: 4px; }
+        .connection {
+            width: 100px; height: 60px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: relative;
+        }
+        .connection-line {
+            width: 100%; height: 2px;
+            background: linear-gradient(90deg, #00d4ff, #00ff00);
+        }
+        .connection-label {
+            position: absolute; top: 10px; font-size: 11px; color: #888;
+        }
+        .two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .data-row {
+            display: flex; justify-content: space-between; padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .data-row .label { color: #888; }
+        .data-row .value { font-weight: bold; color: #00ff00; }
+        .status-badge {
+            display: inline-block; padding: 3px 10px;
+            border-radius: 12px; font-size: 12px; font-weight: bold;
+        }
+        .status-success { background: rgba(0,255,0,0.2); color: #00ff00; }
+        .status-warning { background: rgba(255,170,0,0.2); color: #ffaa00; }
+        .status-error { background: rgba(255,68,68,0.2); color: #ff4444; }
+        .message-log {
+            background: rgba(0,0,0,0.5); padding: 15px; border-radius: 8px;
+            max-height: 400px; overflow-y: auto;
+            font-family: 'Consolas', 'Courier New', monospace; font-size: 12px;
+        }
+        .message-item {
+            padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.05);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .message-time { color: #888; }
+        .message-type { color: #00d4ff; margin: 0 10px; font-weight: bold; }
+        .telemetry-grid {
+            display: grid; grid-template-columns: repeat(6, 1fr);
+            gap: 15px; margin-bottom: 20px;
+        }
+        .telemetry-item {
+            background: rgba(0,212,255,0.1); padding: 20px;
+            border-radius: 8px; text-align: center;
+            border: 1px solid rgba(0,212,255,0.2);
+        }
+        .telemetry-value { font-size: 28px; font-weight: bold; color: #00d4ff; }
+        .telemetry-label { font-size: 12px; color: #888; margin-top: 5px; }
+        .flight-controls {
+            display: grid; grid-template-columns: repeat(5, 1fr);
+            gap: 10px; margin-bottom: 20px;
+        }
+        .control-btn {
+            padding: 20px 10px; border-radius: 8px; text-align: center;
+            cursor: pointer; transition: all 0.3s; font-weight: bold; user-select: none;
+        }
+        .control-btn:hover { transform: scale(1.05); }
+        .control-btn.arm { background: #00ff00; color: #000; }
+        .control-btn.disarm { background: #ff4444; color: #fff; }
+        .control-btn.takeoff { background: #00d4ff; color: #000; }
+        .control-btn.land { background: #ffaa00; color: #000; }
+        .control-btn.rtl { background: #ff66ff; color: #000; }
+        .monitor-panel {
+            background: rgba(0,0,0,0.3); padding: 20px; border-radius: 10px;
+        }
+        .panel-title { color: #00d4ff; margin-bottom: 15px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <h1>无人机飞行规划系统<span class="subtitle">南京科技职业学院</span></h1>
+        <div class="nav-links">
+            <span class="active" data-tab="map">地图</span>
+            <span data-tab="communication">通信链路</span>
+            <span data-tab="monitor">飞行监控</span>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-section active" data-section="map">
+                <h3>3.1 坐标转换</h3>
+                <div class="form-group">
+                    <label>输入经度</label>
+                    <input type="number" id="input-lon" step="0.000001" value="118.7115">
+                </div>
+                <div class="form-group">
+                    <label>输入纬度</label>
+                    <input type="number" id="input-lat" step="0.000001" value="32.0642">
+                </div>
+                <button class="btn" onclick="convertWGS84ToGCJ02()">WGS-84 → GCJ-02</button>
+                <button class="btn btn-secondary" onclick="convertGCJ02ToWGS84()">GCJ-02 → WGS-84</button>
+                <div class="coord-display">
+                    <div class="coord-item">
+                        <span>转换结果:</span>
+                        <span id="result-coord">-</span>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 25px;">3.2 障碍物设置</h3>
+                <div class="form-group">
+                    <label>障碍物名称</label>
+                    <input type="text" id="obstacle-name" placeholder="例如: 教学楼">
+                </div>
+                <div class="form-group">
+                    <label>障碍物高度 (米)</label>
+                    <input type="number" id="obstacle-height" value="50" min="0">
+                </div>
+                <p class="hint-text">点击地图添加多边形顶点，完成后点击"闭合多边形"</p>
+                <button class="btn" onclick="closeObstacle()">闭合多边形</button>
+                <button class="btn btn-secondary" onclick="removeLastPoint()">撤销上一个点</button>
+                <button class="btn btn-danger" onclick="clearObstacles()">清空障碍物</button>
+
+                <h3 style="margin-top: 25px;">障碍物列表</h3>
+                <div class="obstacle-list" id="obstacle-list">
+                    <p class="hint-text">暂无障碍物</p>
+                </div>
+
+                <h3 style="margin-top: 25px;">3.3 飞行参数</h3>
+                <div class="form-group">
+                    <label>飞行高度 (米)</label>
+                    <input type="number" id="flight-altitude" value="100" min="20" max="400">
+                </div>
+                <div class="form-group">
+                    <label>安全半径 (米)</label>
+                    <input type="number" id="safety-radius" value="10" min="5" max="50">
+                </div>
+                <button class="btn" onclick="updateFlightParams()">保存参数</button>
+
+                <h3 style="margin-top: 25px;">3.4 路径规划</h3>
+                <div class="form-group">
+                    <label>起点纬度</label>
+                    <input type="number" id="route-start-lat" step="0.000001" value="32.0642">
+                </div>
+                <div class="form-group">
+                    <label>起点经度</label>
+                    <input type="number" id="route-start-lon" step="0.000001" value="118.7115">
+                </div>
+                <div class="form-group">
+                    <label>终点纬度</label>
+                    <input type="number" id="route-end-lat" step="0.000001" value="32.0660">
+                </div>
+                <div class="form-group">
+                    <label>终点经度</label>
+                    <input type="number" id="route-end-lon" step="0.000001" value="118.7140">
+                </div>
+                <button class="btn" onclick="planDirectRoute()">规划飞越航线</button>
+                <button class="btn btn-secondary" onclick="planBypassRoute()">规划绕飞航线</button>
+            </div>
+
+            <div class="sidebar-section" data-section="communication">
+                <h3>3.4 通信链路</h3>
+                <div class="monitor-panel">
+                    <div class="data-row">
+                        <span class="label">GCS → OBC</span>
+                        <span class="status-badge status-success">正常</span>
+                    </div>
+                    <div class="data-row"><span class="label">延迟</span><span class="value">15 ms</span></div>
+                    <div class="data-row"><span class="label">丢包率</span><span class="value">0.1%</span></div>
+                </div>
+                <div class="monitor-panel" style="margin-top: 15px;">
+                    <div class="data-row">
+                        <span class="label">OBC → FCU</span>
+                        <span class="status-badge status-success">正常</span>
+                    </div>
+                    <div class="data-row"><span class="label">延迟</span><span class="value">5 ms</span></div>
+                    <div class="data-row"><span class="label">丢包率</span><span class="value">0.0%</span></div>
+                </div>
+                <div class="monitor-panel" style="margin-top: 15px;">
+                    <div class="data-row">
+                        <span class="label">备份链路</span>
+                        <span class="status-badge status-warning">待机</span>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 25px;">MAVLink控制</h3>
+                <button class="btn" onclick="startMavlinkSim()">启动模拟</button>
+                <button class="btn btn-secondary" onclick="stopMavlinkSim()">停止模拟</button>
+
+                <h3 style="margin-top: 25px;">消息统计</h3>
+                <div class="monitor-panel">
+                    <div class="data-row"><span class="label">总消息数</span><span class="value" id="msg-total">0</span></div>
+                    <div class="data-row"><span class="label">HEARTBEAT</span><span class="value" id="msg-heartbeat">0</span></div>
+                    <div class="data-row"><span class="label">GPS_RAW_INT</span><span class="value" id="msg-gps">0</span></div>
+                    <div class="data-row"><span class="label">ATTITUDE</span><span class="value" id="msg-attitude">0</span></div>
+                    <div class="data-row"><span class="label">SYS_STATUS</span><span class="value" id="msg-sys">0</span></div>
+                </div>
+            </div>
+
+            <div class="sidebar-section" data-section="monitor">
+                <h3>3.3 飞行控制</h3>
+                <div class="flight-controls" style="grid-template-columns: repeat(2, 1fr);">
+                    <div class="control-btn arm" onclick="armDrone()">解锁</div>
+                    <div class="control-btn disarm" onclick="disarmDrone()">上锁</div>
+                    <div class="control-btn takeoff" onclick="takeoffDrone()">起飞</div>
+                    <div class="control-btn land" onclick="landDrone()">着陆</div>
+                    <div class="control-btn rtl" style="grid-column: span 2;" onclick="rtlDrone()">返航</div>
+                </div>
+
+                <h3>飞行模式</h3>
+                <div class="form-group">
+                    <select id="flight-mode-select" onchange="setFlightMode()">
+                        <option value="MANUAL">手动模式</option>
+                        <option value="STABILIZE">增稳模式</option>
+                        <option value="ALT_HOLD" selected>高度保持</option>
+                        <option value="POS_HOLD">位置保持</option>
+                        <option value="MISSION">任务模式</option>
+                        <option value="RTL">返航模式</option>
+                        <option value="LAND">着陆模式</option>
+                    </select>
+                </div>
+
+                <h3>实时遥测</h3>
+                <div class="monitor-panel">
+                    <div class="data-row">
+                        <span class="label">飞行状态</span>
+                        <span class="status-badge status-error" id="flight-status-badge">未解锁</span>
+                    </div>
+                    <div class="data-row"><span class="label">纬度</span><span class="value" id="side-lat">32.064200</span></div>
+                    <div class="data-row"><span class="label">经度</span><span class="value" id="side-lon">118.711500</span></div>
+                    <div class="data-row"><span class="label">相对高度</span><span class="value" id="side-alt">0.0 m</span></div>
+                    <div class="data-row"><span class="label">地速</span><span class="value" id="side-speed">0.0 m/s</span></div>
+                    <div class="data-row"><span class="label">电池电量</span><span class="value" id="side-battery">100%</span></div>
+                    <div class="data-row"><span class="label">航向</span><span class="value" id="side-heading">0°</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div id="tab-map" class="tab-content active">
+                <div class="map-container">
+                    <div id="map"></div>
+                    <div class="map-toolbar">
+                        <button class="tool-btn active" id="tool-marker" title="标记点" onclick="setTool('marker')">📍</button>
+                        <button class="tool-btn" id="tool-polygon" title="多边形障碍物" onclick="setTool('polygon')">⬡</button>
+                        <button class="tool-btn" id="tool-route" title="航线规划" onclick="setTool('route')">✈</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-communication" class="tab-content">
+                <h2 class="section-title">3.4 通信链路展示</h2>
+
+                <div class="topology-container">
+                    <h3>3.4.1 GCS-OBC-FCU 通信拓扑图</h3>
+                    <div class="topology-chart">
+                        <div class="topology-node node-gcs">
+                            <div class="icon">📡</div>
+                            <div class="name">GCS</div>
+                            <div class="desc">地面控制站</div>
+                        </div>
+                        <div class="connection">
+                            <span class="connection-label">15ms / WiFi</span>
+                            <div class="connection-line"></div>
+                        </div>
+                        <div class="topology-node node-obc">
+                            <div class="icon">💻</div>
+                            <div class="name">OBC</div>
+                            <div class="desc">机载计算机</div>
+                        </div>
+                        <div class="connection">
+                            <span class="connection-label">5ms / UART</span>
+                            <div class="connection-line"></div>
+                        </div>
+                        <div class="topology-node node-fcu">
+                            <div class="icon">🎮</div>
+                            <div class="name">FCU</div>
+                            <div class="desc">飞行控制器</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="two-column">
+                    <div class="topology-container">
+                        <h3>链路状态</h3>
+                        <div class="data-row"><span class="label">主链路</span><span class="status-badge status-success">在线</span></div>
+                        <div class="data-row"><span class="label">备份链路</span><span class="status-badge status-warning">待机</span></div>
+                        <div class="data-row"><span class="label">信号强度</span><span class="value">-58 dBm</span></div>
+                        <div class="data-row"><span class="label">通信频率</span><span class="value">2.4 GHz</span></div>
+                    </div>
+                    <div class="topology-container">
+                        <h3>数据速率</h3>
+                        <div class="data-row"><span class="label">上行速率</span><span class="value">1.2 Mbps</span></div>
+                        <div class="data-row"><span class="label">下行速率</span><span class="value">2.5 Mbps</span></div>
+                        <div class="data-row"><span class="label">MAVLink帧率</span><span class="value">50 Hz</span></div>
+                        <div class="data-row"><span class="label">数据延迟</span><span class="value">20 ms</span></div>
+                    </div>
+                </div>
+
+                <div class="topology-container">
+                    <h3>3.4.2 MAVLink 报文数据流</h3>
+                    <div class="message-log" id="mavlink-log">
+                        <div class="message-item">
+                            <span class="message-time">--:--:--</span>
+                            <span class="message-type">SYSTEM</span>
+                            <span>等待MAVLink数据流启动...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-monitor" class="tab-content">
+                <h2 class="section-title">3.3 飞行监控</h2>
+
+                <div class="telemetry-grid">
+                    <div class="telemetry-item">
+                        <div class="telemetry-value" id="tele-lat">32.064200</div>
+                        <div class="telemetry-label">纬度</div>
+                    </div>
+                    <div class="telemetry-item">
+                        <div class="telemetry-value" id="tele-lon">118.711500</div>
+                        <div class="telemetry-label">经度</div>
+                    </div>
+                    <div class="telemetry-item">
+                        <div class="telemetry-value" id="tele-alt">0.0</div>
+                        <div class="telemetry-label">高度 (m)</div>
+                    </div>
+                    <div class="telemetry-item">
+                        <div class="telemetry-value" id="tele-speed">0.0</div>
+                        <div class="telemetry-label">地速 (m/s)</div>
+                    </div>
+                    <div class="telemetry-item">
+                        <div class="telemetry-value" id="tele-battery">100%</div>
+                        <div class="telemetry-label">电池</div>
+                    </div>
+                    <div class="telemetry-item">
+                        <div class="telemetry-value" id="tele-sat">12</div>
+                        <div class="telemetry-label">GPS卫星</div>
+                    </div>
+                </div>
+
+                <div class="two-column">
+                    <div class="monitor-panel">
+                        <h3 class="panel-title">姿态信息</h3>
+                        <div class="data-row"><span class="label">横滚 (Roll)</span><span class="value" id="att-roll">0.00°</span></div>
+                        <div class="data-row"><span class="label">俯仰 (Pitch)</span><span class="value" id="att-pitch">0.00°</span></div>
+                        <div class="data-row"><span class="label">偏航 (Yaw)</span><span class="value" id="att-yaw">0.00°</span></div>
+                        <div class="data-row"><span class="label">航向 (Heading)</span><span class="value" id="att-heading">0.00°</span></div>
+                    </div>
+                    <div class="monitor-panel">
+                        <h3 class="panel-title">电池状态</h3>
+                        <div class="data-row"><span class="label">电量</span><span class="value" id="bat-percent">100%</span></div>
+                        <div class="data-row"><span class="label">电压</span><span class="value" id="bat-voltage">12.60 V</span></div>
+                        <div class="data-row"><span class="label">电流</span><span class="value" id="bat-current">0.0 A</span></div>
+                        <div class="data-row"><span class="label">预计剩余</span><span class="value" id="bat-time">-- min</span></div>
+                    </div>
+                    <div class="monitor-panel">
+                        <h3 class="panel-title">系统状态</h3>
+                        <div class="data-row"><span class="label">CPU负载</span><span class="value" id="sys-cpu">0%</span></div>
+                        <div class="data-row"><span class="label">内存使用</span><span class="value" id="sys-mem">0%</span></div>
+                        <div class="data-row">
+                            <span class="label">飞行模式</span>
+                            <span class="status-badge status-success" id="sys-mode">高度保持</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="label">飞行状态</span>
+                            <span class="status-badge status-error" id="sys-status">未解锁</span>
+                        </div>
+                    </div>
+                    <div class="monitor-panel">
+                        <h3 class="panel-title">GPS信息</h3>
+                        <div class="data-row"><span class="label">定位状态</span><span class="status-badge status-success">3D定位</span></div>
+                        <div class="data-row"><span class="label">卫星数量</span><span class="value" id="gps-sat">12</span></div>
+                        <div class="data-row"><span class="label">水平精度</span><span class="value">1.2 m</span></div>
+                        <div class="data-row"><span class="label">垂直精度</span><span class="value">1.8 m</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <div class="status-item">
+            <div class="status-indicator"></div>
+            <span>系统在线</span>
+        </div>
+        <div class="status-item"><span>GPS: <span id="gps-status">12颗卫星</span></span></div>
+        <div class="status-item"><span>电池: <span id="battery-status">100%</span></span></div>
+        <div class="status-item" id="current-time"></div>
+    </div>
+
+    <script>
+        const CENTER_LAT = 32.0642;
+        const CENTER_LON = 118.7115;
+        const CAMPUS_NAME = "南京科技职业学院";
+
+        let map;
+        let polygonPoints = [];
+        let tempMarkers = [];
+        let tempPolygon = null;
+        let currentTool = 'marker';
+        let mavlinkRunning = false;
+        let messageCounts = {};
+        let totalMessages = 0;
+        let monitorRunning = false;
+
+        function initMap() {
+            map = L.map('map').setView([CENTER_LAT, CENTER_LON], 17);
+
+            const tileUrl = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
+            L.tileLayer(tileUrl, { subdomains: '1234', attribution: '© 高德地图' }).addTo(map);
+
+            L.marker([CENTER_LAT, CENTER_LON], {
+                icon: L.divIcon({
+                    className: 'start-marker',
+                    html: '<div style="background:#00ff00;width:20px;height:20px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 10px #00ff00;"></div>',
+                    iconSize: [20, 20],
+                    iconAnchor: [10, 10]
+                })
+            }).addTo(map).bindPopup('飞行起始点<br>' + CAMPUS_NAME + '<br>(' + CENTER_LAT.toFixed(6) + ', ' + CENTER_LON.toFixed(6) + ')');
+
+            addDemoObstacles();
+            map.on('click', onMapClick);
+            map.invalidateSize();
+        }
+
+        function addDemoObstacles() {
+            const obs1 = [[32.0650, 118.7110],[32.0655, 118.7110],[32.0655, 118.7118],[32.0650, 118.7118]];
+            L.polygon(obs1, {color:'#ff4444', weight:2, fillColor:'#ff4444', fillOpacity:0.3}).addTo(map).bindPopup('教学楼A<br>高度: 45m');
+
+            const obs2 = [[32.0638, 118.7120],[32.0642, 118.7120],[32.0642, 118.7128],[32.0638, 118.7128]];
+            L.polygon(obs2, {color:'#ff4444', weight:2, fillColor:'#ff4444', fillOpacity:0.3}).addTo(map).bindPopup('实验楼B<br>高度: 60m');
+
+            addObstacleToList('教学楼A', 45);
+            addObstacleToList('实验楼B', 60);
+        }
+
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tool-' + tool).classList.add('active');
+        }
+
+        function onMapClick(e) {
+            const lat = e.latlng.lat;
+            const lon = e.latlng.lng;
+
+            if (currentTool === 'marker') {
+                L.marker([lat, lon]).addTo(map).bindPopup('航点<br>' + lat.toFixed(6) + ', ' + lon.toFixed(6));
+            } else if (currentTool === 'polygon') {
+                polygonPoints.push([lat, lon]);
+                const m = L.circleMarker([lat, lon], {radius:5, color:'#ff4444', fillColor:'#ff4444', fillOpacity:0.8}).addTo(map);
+                tempMarkers.push(m);
+                if (tempPolygon) map.removeLayer(tempPolygon);
+                if (polygonPoints.length >= 3) {
+                    tempPolygon = L.polygon(polygonPoints, {color:'#ff4444', weight:2, dashArray:'5,5', fillColor:'#ff4444', fillOpacity:0.2}).addTo(map);
+                }
+                document.getElementById('obstacle-name').value = '障碍物' + (getObsCount() + 1);
+            }
+        }
+
+        function getObsCount() { return document.querySelectorAll('.obstacle-item').length; }
+
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-links span').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.sidebar-section').forEach(s => s.classList.remove('active'));
+
+            document.getElementById('tab-' + tabName).classList.add('active');
+            document.querySelector('.nav-links span[data-tab="' + tabName + '"]').classList.add('active');
+            document.querySelector('.sidebar-section[data-section="' + tabName + '"]').classList.add('active');
+
+            if (tabName === 'map') setTimeout(() => map && map.invalidateSize(), 100);
+            if (tabName === 'monitor' && !monitorRunning) startMonitorSim();
+        }
+
+        function wgs84ToGcj02(lon, lat) {
+            const a = 6378245.0, ee = 0.006693421622965, pi = Math.PI;
+            function tLat(x,y){let r=-100+2*x+3*y+0.2*y*y+0.1*x*y+0.2*Math.sqrt(Math.abs(x));r+=(20*Math.sin(6*x*pi)+20*Math.sin(2*x*pi))*2/3;r+=(20*Math.sin(y*pi)+40*Math.sin(y/3*pi))*2/3;r+=(160*Math.sin(y/12*pi)+320*Math.sin(y*pi/30))*2/3;return r;}
+            function tLon(x,y){let r=300+x+2*y+0.1*x*x+0.1*x*y+0.1*Math.sqrt(Math.abs(x));r+=(20*Math.sin(6*x*pi)+20*Math.sin(2*x*pi))*2/3;r+=(20*Math.sin(x*pi)+40*Math.sin(x/3*pi))*2/3;r+=(150*Math.sin(x/12*pi)+300*Math.sin(x/30*pi))*2/3;return r;}
+            let dLat=tLat(lon-105,lat-35), dLon=tLon(lon-105,lat-35);
+            const radLat=lat/180*pi; let magic=Math.sin(radLat); magic=1-ee*magic*magic;
+            const sqrtMagic=Math.sqrt(magic);
+            dLat=(dLat*180)/((a*(1-ee))/(magic*sqrtMagic)*pi);
+            dLon=(dLon*180)/(a/sqrtMagic*Math.cos(radLat)*pi);
+            return [lon+dLon, lat+dLat];
+        }
+
+        function gcj02ToWgs84(lon, lat) {
+            const g = wgs84ToGcj02(lon, lat);
+            return [lon*2-g[0], lat*2-g[1]];
+        }
+
+        function convertWGS84ToGCJ02() {
+            const lon=parseFloat(document.getElementById('input-lon').value);
+            const lat=parseFloat(document.getElementById('input-lat').value);
+            if(isNaN(lon)||isNaN(lat)){alert('请输入有效坐标');return;}
+            const r=wgs84ToGcj02(lon,lat);
+            document.getElementById('result-coord').textContent='GCJ-02: ('+r[0].toFixed(6)+', '+r[1].toFixed(6)+')';
+        }
+
+        function convertGCJ02ToWGS84() {
+            const lon=parseFloat(document.getElementById('input-lon').value);
+            const lat=parseFloat(document.getElementById('input-lat').value);
+            if(isNaN(lon)||isNaN(lat)){alert('请输入有效坐标');return;}
+            const r=gcj02ToWgs84(lon,lat);
+            document.getElementById('result-coord').textContent='WGS-84: ('+r[0].toFixed(6)+', '+r[1].toFixed(6)+')';
+        }
+
+        function closeObstacle() {
+            if(polygonPoints.length<3){alert('至少需要3个顶点');return;}
+            const name=document.getElementById('obstacle-name').value||'障碍物';
+            const height=parseFloat(document.getElementById('obstacle-height').value)||50;
+
+            if(tempPolygon){map.removeLayer(tempPolygon);tempPolygon=null;}
+            tempMarkers.forEach(m=>map.removeLayer(m)); tempMarkers=[];
+
+            L.polygon(polygonPoints, {color:'#ff4444', weight:2, fillColor:'#ff4444', fillOpacity:0.3})
+                .addTo(map).bindPopup(name+'<br>高度: '+height+'m');
+
+            addObstacleToList(name, height);
+            polygonPoints=[];
+        }
+
+        function removeLastPoint() {
+            if(polygonPoints.length>0){
+                polygonPoints.pop();
+                if(tempMarkers.length>0){
+                    map.removeLayer(tempMarkers.pop());
+                }
+                if(tempPolygon){map.removeLayer(tempPolygon);tempPolygon=null;}
+                if(polygonPoints.length>=3){
+                    tempPolygon=L.polygon(polygonPoints,{color:'#ff4444',weight:2,dashArray:'5,5',fillColor:'#ff4444',fillOpacity:0.2}).addTo(map);
+                }
+            }
+        }
+
+        function clearObstacles() {
+            polygonPoints=[];
+            if(tempPolygon){map.removeLayer(tempPolygon);tempPolygon=null;}
+            tempMarkers.forEach(m=>map.removeLayer(m)); tempMarkers=[];
+            document.getElementById('obstacle-list').innerHTML='<p class="hint-text">暂无障碍物</p>';
+        }
+
+        function addObstacleToList(name, height) {
+            const list=document.getElementById('obstacle-list');
+            if(list.querySelector('.hint-text')) list.innerHTML='';
+            const item=document.createElement('div');
+            item.className='obstacle-item';
+            item.innerHTML='<h4>'+name+'</h4><div class="height">高度: '+height+'m</div>';
+            list.appendChild(item);
+        }
+
+        function updateFlightParams() { alert('飞行参数已保存'); }
+
+        function planDirectRoute() {
+            const slat=parseFloat(document.getElementById('route-start-lat').value);
+            const slon=parseFloat(document.getElementById('route-start-lon').value);
+            const elat=parseFloat(document.getElementById('route-end-lat').value);
+            const elon=parseFloat(document.getElementById('route-end-lon').value);
+
+            const route=[[slat,slon],[elat,elon]];
+            L.polyline(route,{color:'#00d4ff',weight:3,opacity:0.8}).addTo(map).bindPopup('飞越航线');
+            route.forEach((p,i)=>{
+                L.circleMarker(p,{radius:6,color:'#00d4ff',fillColor:'#00d4ff',fillOpacity:0.7}).addTo(map).bindPopup('航点 '+(i+1));
+            });
+            alert('飞越航线已规划');
+        }
+
+        function planBypassRoute() {
+            const slat=parseFloat(document.getElementById('route-start-lat').value);
+            const slon=parseFloat(document.getElementById('route-start-lon').value);
+            const elat=parseFloat(document.getElementById('route-end-lat').value);
+            const elon=parseFloat(document.getElementById('route-end-lon').value);
+
+            const offset=0.0008;
+            const mlat=(slat+elat)/2, mlon=(slon+elon)/2;
+            const route=[[slat,slon],[mlat,mlon+offset],[elat,elon]];
+
+            L.polyline(route,{color:'#ffaa00',weight:3,opacity:0.8,dashArray:'10,5'}).addTo(map).bindPopup('绕飞航线');
+            route.forEach((p,i)=>{
+                L.circleMarker(p,{radius:6,color:'#ffaa00',fillColor:'#ffaa00',fillOpacity:0.7}).addTo(map).bindPopup('航点 '+(i+1));
+            });
+            alert('绕飞航线已规划');
+        }
+
+        function startMavlinkSim() {
+            if(mavlinkRunning) return;
+            mavlinkRunning=true;
+            messageCounts={}; totalMessages=0;
+            generateMavlinkMessage();
+        }
+
+        function stopMavlinkSim() { mavlinkRunning=false; }
+
+        function generateMavlinkMessage() {
+            if(!mavlinkRunning) return;
+            const types=['HEARTBEAT','GPS_RAW_INT','ATTITUDE','GLOBAL_POSITION_INT','SYS_STATUS'];
+            const type=types[Math.floor(Math.random()*types.length)];
+            messageCounts[type]=(messageCounts[type]||0)+1;
+            totalMessages++;
+
+            const now=new Date();
+            const t=now.toTimeString().substring(0,8)+'.'+String(now.getMilliseconds()).padStart(3,'0');
+
+            let content='';
+            switch(type){
+                case 'HEARTBEAT': content='type=Quadrotor autopilot=PX4 status=ACTIVE'; break;
+                case 'GPS_RAW_INT': content='lat='+Math.floor(320642000+Math.random()*200-100)+' lon='+Math.floor(1187115000+Math.random()*200-100)+' fix=3D'; break;
+                case 'ATTITUDE': content='roll='+(Math.random()*10-5).toFixed(2)+' pitch='+(Math.random()*10-5).toFixed(2)+' yaw='+Math.floor(Math.random()*360); break;
+                case 'GLOBAL_POSITION_INT': content='vx='+Math.floor(Math.random()*500)+' vy='+Math.floor(Math.random()*500); break;
+                case 'SYS_STATUS': content='load='+Math.floor(Math.random()*30+15)+'% battery='+Math.floor(Math.random()*20+80)+'%'; break;
+            }
+
+            const log=document.getElementById('mavlink-log');
+            const el=document.createElement('div');
+            el.className='message-item';
+            el.innerHTML='<span class="message-time">'+t+'</span><span class="message-type">'+type+'</span><span>'+content+'</span>';
+            log.insertBefore(el, log.firstChild);
+            while(log.children.length>50) log.removeChild(log.lastChild);
+
+            updateMsgStats();
+            setTimeout(generateMavlinkMessage, 500+Math.random()*500);
+        }
+
+        function updateMsgStats() {
+            document.getElementById('msg-total').textContent=totalMessages;
+            document.getElementById('msg-heartbeat').textContent=messageCounts['HEARTBEAT']||0;
+            document.getElementById('msg-gps').textContent=messageCounts['GPS_RAW_INT']||0;
+            document.getElementById('msg-attitude').textContent=messageCounts['ATTITUDE']||0;
+            document.getElementById('msg-sys').textContent=messageCounts['SYS_STATUS']||0;
+        }
+
+        function armDrone() { setFlightStatus('已解锁','status-success'); }
+        function disarmDrone() { setFlightStatus('未解锁','status-error'); }
+        function takeoffDrone() {
+            setFlightStatus('起飞中','status-warning');
+            setTimeout(()=>setFlightStatus('飞行中','status-success'), 2000);
+        }
+        function landDrone() {
+            setFlightStatus('着陆中','status-warning');
+            setTimeout(()=>setFlightStatus('已着陆','status-success'), 2000);
+        }
+        function rtlDrone() { setFlightStatus('返航中','status-warning'); }
+
+        function setFlightMode() {
+            const mode=document.getElementById('flight-mode-select').value;
+            const map={MANUAL:'手动模式',STABILIZE:'增稳模式',ALT_HOLD:'高度保持',POS_HOLD:'位置保持',MISSION:'任务模式',RTL:'返航模式',LAND:'着陆模式'};
+            document.getElementById('sys-mode').textContent=map[mode]||mode;
+        }
+
+        function setFlightStatus(status, cls) {
+            ['flight-status-badge','sys-status'].forEach(id=>{
+                const el=document.getElementById(id);
+                if(el){el.textContent=status;el.className='status-badge '+cls;}
+            });
+        }
+
+        function startMonitorSim() {
+            if(monitorRunning) return;
+            monitorRunning=true;
+            let alt=0, battery=100, lat=CENTER_LAT, lon=CENTER_LON;
+
+            function update() {
+                if(!monitorRunning) return;
+                lat+=(Math.random()-0.5)*0.00002;
+                lon+=(Math.random()-0.5)*0.00002;
+
+                document.getElementById('tele-lat').textContent=lat.toFixed(6);
+                document.getElementById('tele-lon').textContent=lon.toFixed(6);
+                document.getElementById('side-lat').textContent=lat.toFixed(6);
+                document.getElementById('side-lon').textContent=lon.toFixed(6);
+
+                const st=document.getElementById('flight-status-badge').textContent;
+                if(st==='飞行中'||st==='起飞中'||st==='返航中'){
+                    alt=Math.max(0,alt+(Math.random()-0.3)*0.5);
+                    battery=Math.max(0,battery-0.01);
+                }
+
+                document.getElementById('tele-alt').textContent=alt.toFixed(1);
+                document.getElementById('side-alt').textContent=alt.toFixed(1)+' m';
+
+                const speed=st==='飞行中'?(Math.random()*8+2):0;
+                document.getElementById('tele-speed').textContent=speed.toFixed(1);
+                document.getElementById('side-speed').textContent=speed.toFixed(1)+' m/s';
+
+                document.getElementById('tele-battery').textContent=battery.toFixed(0)+'%';
+                document.getElementById('bat-percent').textContent=battery.toFixed(0)+'%';
+                document.getElementById('battery-status').textContent=battery.toFixed(0)+'%';
+                document.getElementById('side-battery').textContent=battery.toFixed(0)+'%';
+
+                const volt=10.8+(battery/100)*1.8;
+                document.getElementById('bat-voltage').textContent=volt.toFixed(2)+' V';
+
+                const curr=st==='飞行中'?(Math.random()*10+15):(Math.random()*2);
+                document.getElementById('bat-current').textContent=curr.toFixed(1)+' A';
+                if(curr>0) document.getElementById('bat-time').textContent=Math.floor((battery*12.6*0.8)/(curr*volt)*60)+' min';
+
+                document.getElementById('att-roll').textContent=(Math.random()*10-5).toFixed(2)+'°';
+                document.getElementById('att-pitch').textContent=(Math.random()*10-5).toFixed(2)+'°';
+                document.getElementById('att-yaw').textContent=Math.floor(Math.random()*360)+'°';
+                document.getElementById('att-heading').textContent=Math.floor(Math.random()*360)+'°';
+                document.getElementById('side-heading').textContent=Math.floor(Math.random()*360)+'°';
+
+                document.getElementById('sys-cpu').textContent=Math.floor(Math.random()*30+15)+'%';
+                document.getElementById('sys-mem').textContent=Math.floor(Math.random()*20+30)+'%';
+
+                const sats=Math.floor(Math.random()*5+10);
+                document.getElementById('tele-sat').textContent=sats;
+                document.getElementById('gps-sat').textContent=sats;
+                document.getElementById('gps-status').textContent=sats+'颗卫星';
+
+                setTimeout(update, 500);
+            }
+            update();
+        }
+
+        function updateTime() {
+            document.getElementById('current-time').textContent=new Date().toLocaleString();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initMap();
+
+            document.querySelectorAll('.nav-links span').forEach(link=>{
+                link.addEventListener('click', function(){ showTab(this.dataset.tab); });
+            });
+
+            setInterval(updateTime, 1000);
+            updateTime();
+            startMonitorSim();
+        });
+    </script>
+</body>
+</html>
